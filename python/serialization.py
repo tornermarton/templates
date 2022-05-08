@@ -177,6 +177,16 @@ def serializable(fork_inst: Type[StateHolder] = StateHolder) -> Callable[[T], T]
     return class_wrapper
 
 
+# Example:
+#
+# @serializable()
+# @with_dump(strip_attr="a")
+# @dataclasses.dataclass
+# class B(object):
+#     a: int
+#     first_name: str
+
+
 class Formatter(Generic[T], metaclass=abc.ABCMeta):
     def __init__(
         self,

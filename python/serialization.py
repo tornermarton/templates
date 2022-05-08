@@ -1,8 +1,10 @@
 # coding=utf-8
 import abc
+import csv
 import dataclasses
+import enum
 import io
-from typing import Callable, Generic, MutableSequence, Optional, Type, TypeVar, Union, cast
+from typing import Callable, Generic, MutableSequence, Optional, Type, TypeVar, Union, cast, Iterable, Any
 
 import jsons
 from ruamel.yaml import YAML
@@ -209,8 +211,13 @@ class Formatter(Generic[T], metaclass=abc.ABCMeta):
         return self.loads(obj.decode(encoding=encoding), cls=cls, **kwargs)
 
 
+class Parameters(object):
+    def as_dict(self) -> dict:
+        return {key: value for key, value in self.__dict__ if value is not None}
+
+
 @dataclasses.dataclass
-class JsonParameters(object):
+class JsonParameters(Parameters):
     skipkeys: Optional[bool] = None
     ensure_ascii: Optional[bool] = None
     check_circular: Optional[bool] = None
@@ -221,7 +228,7 @@ class JsonParameters(object):
     sort_keys: Optional[bool] = None
 
 
-class JsonFormatter(Formatter):
+class JsonFormatter(Formatter[dict]):
     def __init__(
         self,
         parameters: JsonParameters = JsonParameters(),
@@ -234,24 +241,38 @@ class JsonFormatter(Formatter):
     def _convert_obj_to_str(self, data: object) -> str:
         return json.dumps(
             data,
-            **cast(dict, jsons.dump(self._parameters, cls=JsonParameters, strip_nulls=True))
+            **cast(
+                dict,
+                jsons.dump(
+                    self._parameters,
+                    cls=JsonParameters,
+                    strip_nulls=True,
+                )
+            )
         )
 
     def _convert_str_to_obj(self, data: str) -> object:
         return json.loads(
             data,
-            **cast(dict, jsons.dump(self._parameters, cls=JsonParameters, strip_nulls=True))
+            **cast(
+                dict,
+                jsons.dump(
+                    self._parameters,
+                    cls=JsonParameters,
+                    strip_nulls=True,
+                )
+            )
         )
 
 
 @dataclasses.dataclass
-class YamlParameters(object):
+class YamlParameters(Parameters):
     mapping: int = 4
     sequence: int = 4
     offset: int = 2
 
 
-class YamlFormatter(Formatter):
+class YamlFormatter(Formatter[dict]):
     def __init__(
         self,
         parameters: YamlParameters = YamlParameters(),
@@ -276,3 +297,110 @@ class YamlFormatter(Formatter):
 
     def _convert_str_to_obj(self, data: str) -> object:
         return YAML(typ='safe').load(data)
+
+
+class DataFormatter(object):
+    def __init__(self, parameters: Optional[Parameters] = None) -> None:
+        self._parameters: Optional[Parameters] = parameters
+
+
+class QUOTING(enum.IntEnum):
+    QUOTE_ALL = csv.QUOTE_ALL
+    QUOTE_MINIMAL = csv.QUOTE_MINIMAL
+    QUOTE_NONE = csv.QUOTE_NONE
+    QUOTE_NONNUMERIC = csv.QUOTE_NONNUMERIC
+
+
+@dataclasses.dataclass
+class XSVParameters(Parameters):
+    delimiter: Optional[str] = None
+    doublequote: Optional[bool] = None
+    escapechar: Optional[str] = None
+    lineterminator: Optional[str] = None
+    quotechar: Optional[str] = None
+    quoting: Optional[QUOTING] = None
+    skipinitialspace: Optional[bool] = None
+
+
+class XSVDataFormatter(DataFormatter):
+    def __init__(self, parameters: XSVParameters = XSVParameters()) -> None:
+        super().__init__(parameters=parameters)
+
+    def load_data(self, data: str) -> Iterable[Iterable[Any]]:
+        reader = csv.reader(
+            data.split(self._parameters.lineterminator),
+            **self._parameters.as_dict()
+        )
+
+        return [line for line in reader if not (len(line) < 1)]
+
+    def dump_data(self, data: Iterable[Iterable[Any]]) -> str:
+        csv_container = io.StringIO()
+        writer = csv.writer(csv_container, **self._parameters.as_dict())
+
+        writer.writerows(data)
+
+        return csv_container.getvalue()
+
+
+@dataclasses.dataclass
+class JsonDataFormatter(DataFormatter):
+    def __init__(self, parameters: JsonParameters = JsonParameters()) -> None:
+        super().__init__(parameters=parameters)
+
+    def load_data(self, data: str) -> dict[str, Any]:
+        return json.loads(data)
+
+    def dump_data(self, data: dict[str, Any]) -> str:
+        return json.dumps(data, **self._parameters.as_dict())
+
+
+@dataclasses.dataclass
+class YamlDataFormatter(DataFormatter):
+    def __init__(self, parameters: YamlParameters = YamlParameters()) -> None:
+        super().__init__(parameters=parameters)
+
+    def load_data(self, data: str) -> dict[str, Any]:
+        return YAML(typ='safe').load(data)
+
+    def dump_data(self, data: dict[str, Any]) -> str:
+        yaml_container = io.StringIO()
+
+        yaml = YAML()
+        yaml.indent(**self._parameters.as_dict())
+        yaml.dump(data=data, stream=yaml_container)
+
+        return yaml_container.getvalue()
+
+
+@dataclasses.dataclass
+class EnvDataFormatter(DataFormatter):
+    def __init__(self) -> None:
+        super().__init__(parameters=None)
+
+    def load_data(self, data: str) -> dict[str, str]:
+        # TODO: casting values (if needed)
+        d = {}
+
+        for line in data:
+            line = line.strip()
+            if not line.startswith('#') or line.strip() != "":
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+
+                if key == "":
+                    raise ValueError("Invalid key")
+
+                d[key] = value if value != "" else None
+
+        return d
+
+    def dump_data(self, data: dict[str, Any]) -> str:
+        # TODO: handle space in strings
+        s = ""
+
+        for key, value in data.items():
+            s += f"{key}={value}"
+
+        return s

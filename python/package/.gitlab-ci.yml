@@ -1,0 +1,55 @@
+image: python:latest
+stages:
+  - build
+  - test
+  - deploy
+
+
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+
+before_script:
+  - python --version  # For debugging
+  - pip install virtualenv
+  - virtualenv venv
+  - source venv/bin/activate
+
+
+build:
+    stage: build
+    script:
+        - python3 -m pip install --upgrade build
+        - make build
+    artifacts:
+        paths:
+            - dist/*
+    rules:
+        - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+        - if: $CI_COMMIT_TAG
+
+
+lint:
+    stage: test
+    script:
+        - python3 -m pip install --upgrade flake8
+        - make lint
+    rules:
+        - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+        - if: $CI_COMMIT_TAG
+
+
+dist:
+    stage: deploy
+    variables:
+        TWINE_USERNAME: gitlab-ci-token
+        TWINE_PASSWORD: $CI_JOB_TOKEN
+        GITLAB_URL: $CI_API_V4_URL
+        PROJECT_ID: $CI_PROJECT_ID
+    script:
+        - python3 -m pip install --upgrade twine
+        - make release
+    only:
+        - tags

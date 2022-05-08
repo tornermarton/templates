@@ -9,7 +9,7 @@ import lzma
 import shutil
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, Union
 
 _compressions: dict[str, Type[Compression]] = {}
 
@@ -86,44 +86,68 @@ class File(object):
         else:
             return open(*args, **kwargs)
 
-    def copy(self, target: File) -> None:
-        with self.open('rb') as source_file:
-            with target.open('wb') as target_file:
-                shutil.copyfileobj(source_file, target_file)
-
-
-class Compressor(object):
-    def __init__(self, compression: Compression) -> None:
-        self._compression: Compression = compression
-
-    def compress(
+    def copy_content_binary(
         self,
-        source: File,
-        target: Optional[File] = None,
-        delete_source: bool = False,
-    ) -> File:
-        if not target:
-            file_name: str = f"{source.path.name}{self._compression.extension}"
-            target: File = copy.deepcopy(source)
-            target.path = source.path.parent / file_name
-
-        if target.path.exists():
+        target: File,
+        overwrite: bool = False,
+    ) -> None:
+        if target.path.exists() and not overwrite:
             raise FileExistsError(
-                f"The target file {target.path} already exists, "
-                f"aborting compression to prevent overwriting data!"
+                f"The target {target.path} already exists, operation aborted!"
             )
-
         try:
-            source.copy(target=target)
+            with self.open('rb') as source_file:
+                with target.open('wb') as target_file:
+                    shutil.copyfileobj(source_file, target_file)
         except Exception as e:
-            # Provide atomicity
             if target.path.exists():
                 target.path.unlink()
 
             raise e
-        else:
-            # Delete file if compression was successful
-            if delete_source:
-                source.path.unlink()
 
-            return target
+    def compress(
+            self,
+            compression: Union[str, Compression] = GzipCompression(),
+            target_path: Optional[Path] = None,
+            overwrite: bool = False,
+            delete_source: bool = False,
+    ) -> File:
+        if isinstance(compression, str):
+            compression = create_compression(name=compression)
+
+        target: File = copy.deepcopy(self)
+        target.compression = compression
+
+        if target_path is None:
+            name: str = f"{self.path.name}{compression.extension}"
+            target.path = self.path.parent / name
+        else:
+            target.path = target_path
+
+        self.copy_content_binary(target=target, overwrite=overwrite)
+
+        if delete_source:
+            self.path.unlink()
+
+        return target
+
+    def uncompress(
+        self,
+        target_path: Optional[Path] = None,
+        overwrite: bool = False,
+        delete_source: bool = False,
+    ) -> File:
+        target: File = copy.deepcopy(self)
+
+        if target_path is None:
+            name: str = self.path.name.lstrip(self.compression.extension)
+            target.path = self.path.parent / name
+        else:
+            target.path = target_path
+
+        self.copy_content_binary(target=target, overwrite=overwrite)
+
+        if delete_source:
+            self.path.unlink()
+
+        return target

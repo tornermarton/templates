@@ -82,9 +82,9 @@ class File(object):
 
     def open(self, *args: Any, **kwargs: Any) -> Any:
         if self.compression is not None:
-            self.compression.open(*args, **kwargs)
+            return self.compression.open(self.path, *args, **kwargs)
         else:
-            return open(*args, **kwargs)
+            return open(self.path, *args, **kwargs)
 
     def copy_content_binary(
         self,

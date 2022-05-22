@@ -83,42 +83,41 @@ class DirectedGraph(object):
     def _has_circle_until(
         self,
         vertex: str,
-        visited_global: dict[str, bool],
-        visited_recursion: dict[str, bool],
+        visited_global: set[str],
+        visited_recursion: set[str],
     ) -> bool:
-        visited_global[vertex] = True
-        visited_recursion[vertex] = True
+        visited_global.add(vertex)
+        visited_recursion.add(vertex)
 
         for neighbor in self._graph_dict[vertex]:
             if (
-                visited_recursion[neighbor] or
-                not visited_global[neighbor] and
+                neighbor in visited_recursion or
+                neighbor not in visited_global and
                 self._has_circle_until(
-                    neighbor,
-                    visited_global,
-                    visited_recursion
+                    vertex=neighbor,
+                    visited_global=visited_global,
+                    visited_recursion=visited_recursion
                 )
             ):
                 return True
 
-        visited_recursion[vertex] = False
+        visited_recursion.remove(vertex)
 
         return False
 
     def has_circle(self) -> bool:
-        vertex_names: list[str] = list(self._graph_dict.keys())
+        visited: set[str] = set()
 
-        visited_global: dict[str, bool] = {v: False for v in vertex_names}
-        visited_recursion: dict[str, bool] = {v: False for v in vertex_names}
-
-        for vertex in vertex_names:
-            if not visited_global[vertex]:
-                if self._has_circle_until(
+        for vertex in self._graph_dict.keys():
+            if (
+                vertex not in visited and
+                self._has_circle_until(
                     vertex=vertex,
-                    visited_global=visited_global,
-                    visited_recursion=visited_recursion,
-                ):
-                    return True
+                    visited_global=visited,
+                    visited_recursion=set(),
+                )
+            ):
+                return True
 
         return False
 

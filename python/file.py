@@ -138,6 +138,7 @@ class File(object):
         delete_source: bool = False,
     ) -> File:
         target: File = copy.deepcopy(self)
+        target.compression = None
 
         if target_path is None:
             name: str = self.path.name.lstrip(self.compression.extension)

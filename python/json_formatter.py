@@ -11,7 +11,7 @@ from types import TracebackType
 from typing import Optional, Any, Callable, Union, Type
 
 try:
-    import jsons as json
+    import ujson as json
 except ImportError:
     import json
 

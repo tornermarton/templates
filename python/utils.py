@@ -13,9 +13,9 @@ def timeit(f: Callable[..., R]) -> Callable[..., R]:
     def inner(*args: Any, **kwargs: Any) -> R:
         start: int = time.perf_counter_ns()
         result: Any = f(*args, **kwargs)
-        perf: int = time.perf_counter_ns() - start
+        perf_s: float = (time.perf_counter_ns() - start) / 1_000_000_000
 
-        print(f"Performance({f.__name__}): {perf}s")
+        print(f"Performance({f.__module__}.{f.__qualname__}): {perf_s:.9f}s")
 
         return result
 
@@ -25,17 +25,17 @@ def timeit(f: Callable[..., R]) -> Callable[..., R]:
 def debug(f: Callable[..., R]) -> Callable[..., R]:
     @functools.wraps(f)
     def inner(*args: Any, **kwargs: Any) -> R:
-        arguments: str = ", ".join(
-            [str(a) for a in args] + [f"{k}={v}" for k, v in kwargs.items()]
-        )
+        pos_args: list[str] = [str(a) for a in args]
+        key_args: list[str] = [f"{k}={v}" for k, v in kwargs.items()]
 
-        print(f"{f} invoked as: {f.__name__}({arguments})")
+        arguments: str = ", ".join(pos_args + key_args)
+        print(f"{f} invoked as: {f.__module__}.{f.__name__}({arguments})")
 
         start: int = time.perf_counter_ns()
         result: Any = f(*args, **kwargs)
-        perf: int = time.perf_counter_ns() - start
+        perf_s: float = (time.perf_counter_ns() - start) / 1_000_000_000
 
-        print(f"{f} returned: {result} (runtime: {perf / 1000000000}s)")
+        print(f"{f} returned: {result} (runtime: {perf_s:.9f}s)")
 
         return result
 

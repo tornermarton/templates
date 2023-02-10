@@ -4,194 +4,19 @@ import csv
 import dataclasses
 import enum
 import io
-from typing import Callable, Generic, MutableSequence, Optional, Type, TypeVar, Union, cast, Iterable, Any
+from pathlib import Path
+from typing import Optional, Type, cast, Iterable, Any
 
 import jsons
+import ujson as json
+from overload import overload
 from ruamel.yaml import YAML
 
-try:
-    import ujson as json
-except ImportError:
-    import json
+from .core import StateHolder, T
 
 
-T = TypeVar('T')
-StateHolder = jsons.fork()
-
-
-class Serializer(Generic[T]):
-    @abc.abstractmethod
-    def __call__(self, obj: T, **_) -> object:
-        pass
-
-
-class Deserializer(Generic[T]):
-    @abc.abstractmethod
-    def __call__(self, obj: object, cls: type, **_) -> T:
-        pass
-
-
-@dataclasses.dataclass(frozen=True)
-class ClassSerializer(Serializer[T]):
-    strip_nulls: bool = False
-    strip_privates: bool = False
-    strip_properties: bool = True
-    strip_class_variables: bool = True
-    strip_attr: Optional[Union[str, MutableSequence[str], tuple[str]]] = None
-    key_transformer: Optional[Callable[[str], str]] = None
-    verbose: Union[jsons.Verbosity, bool] = False
-    strict: bool = True
-
-    def __call__(self, obj: T, **kwargs) -> dict:
-        return jsons.default_object_serializer(
-            **{
-                **kwargs,
-                "obj": obj,
-                "strip_nulls": self.strip_nulls,
-                "strip_privates": self.strip_privates,
-                "strip_properties": self.strip_properties,
-                "strip_class_variables": self.strip_class_variables,
-                "strip_attr": self.strip_attr,
-                "key_transformer": self.key_transformer,
-                "verbose": self.verbose,
-                "strict": self.strict
-            }
-        )
-
-
-@dataclasses.dataclass(frozen=True)
-class ClassDeserializer(Deserializer[T]):
-    key_transformer: Optional[Callable[[str], str]] = None
-    strict: bool = True
-
-    def __call__(self, obj: dict, cls: type, **kwargs) -> T:
-        return jsons.default_object_deserializer(
-            **{
-                **kwargs,
-                "obj": obj,
-                "cls": cls,
-                "key_transformer": self.key_transformer,
-                "strict": self.strict
-            }
-
-        )
-
-
-def _set_serializer(cls: T, serializer: ClassSerializer[T]) -> None:
-    cls.__serializer__ = serializer
-
-
-def _pop_serializer(cls: T) -> ClassSerializer:
-    if hasattr(cls, "__serializer__"):
-        serializer = cls.__serializer__
-        del cls.__serializer__
-    else:
-        serializer = ClassSerializer()
-
-    return serializer
-
-
-def _set_deserializer(cls: T, deserializer: ClassDeserializer[T]) -> None:
-    cls.__deserializer__ = deserializer
-
-
-def _pop_deserializer(cls: T) -> ClassDeserializer:
-    if hasattr(cls, "__deserializer__"):
-        deserializer = cls.__deserializer__
-        del cls.__deserializer__
-    else:
-        deserializer = ClassDeserializer()
-
-    return deserializer
-
-
-def with_serializer(serializer: ClassSerializer[T]) -> Callable[[T], T]:
-    def class_wrapper(cls: T) -> T:
-        _set_serializer(cls=cls, serializer=serializer)
-
-        return cls
-
-    return class_wrapper
-
-
-def with_deserializer(deserializer: ClassDeserializer[T]) -> Callable[[T], T]:
-    def class_wrapper(cls: T) -> T:
-        _set_deserializer(cls=cls, deserializer=deserializer)
-
-        return cls
-
-    return class_wrapper
-
-
-def with_dump(
-    strip_nulls: bool = False,
-    strip_privates: bool = False,
-    strip_properties: bool = True,
-    strip_class_variables: bool = True,
-    strip_attr: Optional[Union[str, MutableSequence[str], tuple[str]]] = None,
-    key_transformer: Optional[Callable[[str], str]] = None,
-    verbose: Union[jsons.Verbosity, bool] = False,
-    strict: bool = True,
-) -> Callable[[T], T]:
-    serializer = ClassSerializer(
-        strip_nulls=strip_nulls,
-        strip_privates=strip_privates,
-        strip_properties=strip_properties,
-        strip_class_variables=strip_class_variables,
-        strip_attr=strip_attr,
-        key_transformer=key_transformer,
-        verbose=verbose,
-        strict=strict,
-    )
-
-    return with_serializer(serializer=serializer)
-
-
-def with_load(
-    key_transformer: Optional[Callable[[str], str]] = None,
-    strict: bool = True,
-) -> Callable[[T], T]:
-    deserializer = ClassDeserializer(
-        key_transformer=key_transformer,
-        strict=strict,
-    )
-
-    return with_deserializer(deserializer=deserializer)
-
-
-def serializable(fork_inst: Type[StateHolder] = StateHolder) -> Callable[[T], T]:
-    def class_wrapper(cls: T) -> T:
-        jsons.set_serializer(
-            _pop_serializer(cls),
-            cls=cls,
-            fork_inst=fork_inst
-        )
-        jsons.set_deserializer(
-            _pop_deserializer(cls),
-            cls=cls,
-            fork_inst=fork_inst
-        )
-
-        return cls
-
-    return class_wrapper
-
-
-# Example:
-#
-# @serializable()
-# @with_dump(strip_attr="a")
-# @dataclasses.dataclass
-# class B(object):
-#     a: int
-#     first_name: str
-
-
-class Formatter(Generic[T], metaclass=abc.ABCMeta):
-    def __init__(
-        self,
-        fork_inst: Type[StateHolder] = StateHolder
-    ) -> None:
+class Formatter(metaclass=abc.ABCMeta):
+    def __init__(self, fork_inst: Type[StateHolder] = StateHolder) -> None:
         self._fork_inst: Type[StateHolder] = fork_inst
 
     @abc.abstractmethod
@@ -202,8 +27,17 @@ class Formatter(Generic[T], metaclass=abc.ABCMeta):
     def _convert_str_to_obj(self, data: str) -> object:
         pass
 
-    def dump(self, obj: T, **kwargs) -> object:
-        return jsons.dump(obj, fork_inst=self._fork_inst, **kwargs)
+    @overload
+    def dump(self, obj: dict, **kwargs) -> dict:
+        return jsons.dump(obj, fork_inst=self._fork_inst, **kwargs) # noqa
+
+    @dump.add
+    def dump(self, obj: list, **kwargs) -> list:
+        return jsons.dump(obj, fork_inst=self._fork_inst, **kwargs) # noqa
+
+    @dump.add
+    def dump(self, obj: T, **kwargs) -> dict:
+        return jsons.dump(obj, fork_inst=self._fork_inst, **kwargs) # noqa
 
     def load(self, obj: object, cls: Type[T], **kwargs) -> T:
         return jsons.load(obj, cls=cls, fork_inst=self._fork_inst, **kwargs)
@@ -219,6 +53,12 @@ class Formatter(Generic[T], metaclass=abc.ABCMeta):
 
     def loadb(self, obj: bytes, cls: Type[T], encoding: str = "utf-8", **kwargs) -> T:
         return self.loads(obj.decode(encoding=encoding), cls=cls, **kwargs)
+
+    def write(self, path: Path, obj: object, **kwargs) -> None:
+        path.write_text(self.dumps(obj, **kwargs))
+
+    def read(self, path: Path, cls: Type[T], **kwargs) -> T:
+        return self.loads(path.read_text(), cls=cls, **kwargs)
 
 
 class Parameters(object):
@@ -238,11 +78,11 @@ class JsonParameters(Parameters):
     sort_keys: Optional[bool] = None
 
 
-class JsonFormatter(Formatter[dict]):
+class JsonFormatter(Formatter):
     def __init__(
         self,
         parameters: JsonParameters = JsonParameters(),
-        fork_inst: Type[StateHolder] = StateHolder
+        fork_inst: Type[StateHolder] = StateHolder,
     ) -> None:
         super().__init__(fork_inst)
 
@@ -257,8 +97,8 @@ class JsonFormatter(Formatter[dict]):
                     self._parameters,
                     cls=JsonParameters,
                     strip_nulls=True,
-                )
-            )
+                ),
+            ),
         )
 
     def _convert_str_to_obj(self, data: str) -> object:
@@ -270,8 +110,8 @@ class JsonFormatter(Formatter[dict]):
                     self._parameters,
                     cls=JsonParameters,
                     strip_nulls=True,
-                )
-            )
+                ),
+            ),
         )
 
 
@@ -282,11 +122,11 @@ class YamlParameters(Parameters):
     offset: int = 2
 
 
-class YamlFormatter(Formatter[dict]):
+class YamlFormatter(Formatter):
     def __init__(
         self,
         parameters: YamlParameters = YamlParameters(),
-        fork_inst: Type[StateHolder] = StateHolder
+        fork_inst: Type[StateHolder] = StateHolder,
     ) -> None:
         super().__init__(fork_inst)
 
@@ -299,14 +139,14 @@ class YamlFormatter(Formatter[dict]):
         yaml.indent(
             mapping=self._parameters.mapping,
             sequence=self._parameters.sequence,
-            offset=self._parameters.offset
+            offset=self._parameters.offset,
         )
         yaml.dump(data=data, stream=yaml_container)
 
         return yaml_container.getvalue()
 
     def _convert_str_to_obj(self, data: str) -> object:
-        return YAML(typ='safe').load(data)
+        return YAML(typ="safe").load(data)
 
 
 class DataFormatter(object):
@@ -338,8 +178,7 @@ class XSVDataFormatter(DataFormatter):
 
     def load_data(self, data: str) -> Iterable[Iterable[Any]]:
         reader = csv.reader(
-            data.split(self._parameters.lineterminator),
-            **self._parameters.as_dict()
+            data.split(self._parameters.lineterminator), **self._parameters.as_dict()
         )
 
         return [line for line in reader if not (len(line) < 1)]
@@ -371,7 +210,7 @@ class YamlDataFormatter(DataFormatter):
         super().__init__(parameters=parameters)
 
     def load_data(self, data: str) -> dict[str, Any]:
-        return YAML(typ='safe').load(data)
+        return YAML(typ="safe").load(data)
 
     def dump_data(self, data: dict[str, Any]) -> str:
         yaml_container = io.StringIO()
@@ -394,8 +233,8 @@ class EnvDataFormatter(DataFormatter):
 
         for line in data:
             line = line.strip()
-            if not line.startswith('#') or line.strip() != "":
-                key, value = line.split('=', 1)
+            if not line.startswith("#") or line.strip() != "":
+                key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip()
 

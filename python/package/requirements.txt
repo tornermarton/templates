@@ -1,1 +1,5 @@
+# production
 click~=8.1.2
+
+# development
+black~=23.1.0

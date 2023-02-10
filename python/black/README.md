@@ -10,6 +10,7 @@ pip install black
 
 ## Config
 
+pyproject.toml
 ```toml
 [tool.black]
 line-length = 88
@@ -18,9 +19,9 @@ target-version = ['py39', 'py310']
 
 ## PyCharm
 
-Plugin needed: File Watchers
+Plugin needed: `File Watchers`
 
-Configure file watcher to allow same behaviour as eslint --fix on save
+Configure file watcher to allow same behaviour as eslint --fix on save:
 ```
 Preferences > Tools > File Watchers > +
 

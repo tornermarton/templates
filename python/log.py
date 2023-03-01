@@ -1,14 +1,22 @@
 # coding=utf-8
-__all__ = [
-    "JsonFormatter"
-]
+__all__ = ["LoggingMixin", "JsonFormatter"]
 
 import datetime
 import io
 import logging
 import traceback
 from types import TracebackType
-from typing import Optional, Any, Callable, Union, Type
+from typing import (
+    Optional, 
+    Any, 
+    Callable, 
+    Union, 
+    Type, 
+    Tuple, 
+    TypeAlias, 
+    List, 
+    Dict,
+)
 
 try:
     import ujson as json
@@ -16,16 +24,40 @@ except ImportError:
     import json
 
 
+ExceptionInfo: TypeAlias = Union[
+    Tuple[Type[BaseException], BaseException, Optional[TracebackType]],
+    Tuple[None, None, None],
+]
+
+
+class LoggingMixin:
+    _logger: Union[logging.Logger, None] = None
+
+    def __get_logger(self) -> logging.Logger:
+        name: str = self.__class__.__module__ + "." + self.__class__.__name__
+
+        return logging.getLogger(name=name)
+
+    @property
+    def log(self) -> logging.Logger:
+        """Returns a logger."""
+
+        if self._logger is None:
+            self._logger = self.__get_logger()
+
+        return self._logger
+
+
 class JsonFormatter(logging.Formatter):
     """Format log records as JSON"""
 
-    formatter: Callable[[dict], str] = json.dumps
+    formatter: Callable[[Dict], str] = json.dumps
 
     def __init__(
         self,
-        fields: list[str],
-        rename_fields: Optional[dict[str, str]] = None,
-        static_fields: Optional[dict[str, Any]] = None,
+        fields: List[str],
+        rename_fields: Optional[Dict[str, str]] = None,
+        static_fields: Optional[Dict[str, Any]] = None,
         timestamp: bool = True,
         dt_fmt: Optional[str] = None,
         dt_tz: datetime.tzinfo = datetime.timezone.utc,
@@ -34,9 +66,9 @@ class JsonFormatter(logging.Formatter):
 
         super().__init__()
 
-        self._fields: list[str] = fields
-        self._rename_fields: Optional[dict[str, str]] = rename_fields or {}
-        self._static_fields: Optional[dict[str, Any]] = static_fields or {}
+        self._fields: List[str] = fields
+        self._rename_fields: Optional[Dict[str, str]] = rename_fields or {}
+        self._static_fields: Optional[Dict[str, Any]] = static_fields or {}
         self._dt_fmt: Optional[str] = dt_fmt
         self._dt_tz: datetime.tzinfo = dt_tz
 
@@ -51,21 +83,18 @@ class JsonFormatter(logging.Formatter):
 
             self._uses_time = True
 
-    def format_exception(
-        self,
-        exc_info: Union[tuple[Type[BaseException], BaseException, Optional[TracebackType]], tuple[None, None, None]]  # noqa
-    ) -> str:
+    def format_exception(self, exc_info: ExceptionInfo) -> str:
         """Format the provided exception as a single line"""
 
-        sio: io.StringIO = io.StringIO()
-        traceback.print_exception(*exc_info, None, sio)
-        s: str = sio.getvalue()
-        sio.close()
+        string_io: io.StringIO = io.StringIO()
+        traceback.print_exception(*exc_info, limit=None, file=string_io)
+        stack_trace: str = string_io.getvalue()
+        string_io.close()
 
-        if s[-1:] == '\n':
-            s = s[:-1]
+        if stack_trace[-1:] == "\n":
+            stack_trace = stack_trace[:-1]
 
-        return s
+        return stack_trace
 
     def format_stack(self, stack_info: str) -> str:
         """Format the provided stack info"""
@@ -83,15 +112,15 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format the provided LogRecord as string, omit None values"""
 
-        log_dict: dict[str, Any] = {}
+        log_dict: Dict[str, Any] = {}
 
-        # This replaces args in message with user supplied args (not recommended but supported)
+        # This replaces args in message with user supplied args
+        # (not recommended but supported)
         record.message = record.getMessage()
 
         if self._uses_time:
             dt: datetime.datetime = datetime.datetime.fromtimestamp(
-                record.created,
-                tz=self._dt_tz
+                record.created, tz=self._dt_tz
             )
             record.asctime = self.format_time(dt=dt)
 
@@ -107,29 +136,7 @@ class JsonFormatter(logging.Formatter):
             value: Any = record.__dict__.get(field)
 
             if value is not None:
-                # key is either field itself (default) or the rename variant
+                # key is either field itself (default) or the renamed variant
                 log_dict[self._rename_fields.get(field, field)] = value
 
         return JsonFormatter.formatter({**log_dict, **self._static_fields})
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-
-    logger: logging.Logger = logging.getLogger()
-    logger.handlers[0].setFormatter(
-        JsonFormatter(
-            fields=["name", "message", "exc_info"],
-            rename_fields={"name": "log.logger"},
-            static_fields={"static_field": "static value"}
-        )
-    )
-
-    logger.info("Example info")
-
-    try:
-        raise ValueError("Example exception")
-    except Exception as e:
-        logger.error(e, exc_info=e)
-        logger.exception(e)  # No need for exc_info
-        logger.critical(e, exc_info=e)

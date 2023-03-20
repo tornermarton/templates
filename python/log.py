@@ -1,22 +1,12 @@
 # coding=utf-8
-__all__ = ["LoggingMixin", "JsonFormatter"]
+__all__ = ["LoggingMixin", "JsonLoggingFormatter"]
 
 import datetime
 import io
 import logging
 import traceback
-from types import TracebackType
-from typing import (
-    Optional, 
-    Any, 
-    Callable, 
-    Union, 
-    Type, 
-    Tuple, 
-    TypeAlias, 
-    List, 
-    Dict,
-)
+import types
+import typing
 
 try:
     import ujson as json
@@ -24,52 +14,57 @@ except ImportError:
     import json
 
 
-ExceptionInfo: TypeAlias = Union[
-    Tuple[Type[BaseException], BaseException, Optional[TracebackType]],
-    Tuple[None, None, None],
+ExceptionInfo: typing.TypeAlias = typing.Union[
+    typing.Tuple[
+        typing.Type[BaseException],
+        BaseException,
+        typing.Optional[types.TracebackType],
+    ],
+    typing.Tuple[None, None, None],
 ]
 
 
+def get_logger_for(cls: typing.Type) -> logging.Logger:
+    """Create a logger for the passed class"""
+
+    return logging.getLogger(name=cls.__module__ + "." + cls.__name__)
+
+
 class LoggingMixin:
-    _logger: Union[logging.Logger, None] = None
-
-    def __get_logger(self) -> logging.Logger:
-        name: str = self.__class__.__module__ + "." + self.__class__.__name__
-
-        return logging.getLogger(name=name)
+    _logger: typing.Union[logging.Logger, None] = None
 
     @property
     def log(self) -> logging.Logger:
-        """Returns a logger."""
+        """Returns a logger instance which is created on first call"""
 
         if self._logger is None:
-            self._logger = self.__get_logger()
+            self._logger = get_logger_for(cls=self.__class__)
 
         return self._logger
 
 
-class JsonFormatter(logging.Formatter):
+class JsonLoggingFormatter(logging.Formatter):
     """Format log records as JSON"""
 
-    formatter: Callable[[Dict], str] = json.dumps
+    formatter: typing.Callable[[typing.Dict], str] = json.dumps
 
     def __init__(
         self,
-        fields: List[str],
-        rename_fields: Optional[Dict[str, str]] = None,
-        static_fields: Optional[Dict[str, Any]] = None,
+        fields: typing.List[str],
+        rename_fields: typing.Optional[typing.Dict[str, str]] = None,
+        static_fields: typing.Optional[typing.Dict[str, typing.Any]] = None,
         timestamp: bool = True,
-        dt_fmt: Optional[str] = None,
+        dt_fmt: typing.Optional[str] = None,
         dt_tz: datetime.tzinfo = datetime.timezone.utc,
     ) -> None:
         """Initialize the created instance"""
 
         super().__init__()
 
-        self._fields: List[str] = fields
-        self._rename_fields: Optional[Dict[str, str]] = rename_fields or {}
-        self._static_fields: Optional[Dict[str, Any]] = static_fields or {}
-        self._dt_fmt: Optional[str] = dt_fmt
+        self._fields: typing.List[str] = fields
+        self._rename_fields: typing.Dict[str, str] = rename_fields or {}
+        self._static_fields: typing.Dict[str, typing.Any] = static_fields or {}
+        self._dt_fmt: typing.Optional[str] = dt_fmt
         self._dt_tz: datetime.tzinfo = dt_tz
 
         self._uses_time: bool = False
@@ -109,10 +104,8 @@ class JsonFormatter(logging.Formatter):
 
         return dt.strftime(self._dt_fmt)
 
-    def format(self, record: logging.LogRecord) -> str:
-        """Format the provided LogRecord as string, omit None values"""
-
-        log_dict: Dict[str, Any] = {}
+    def _prepare_record(self, record: logging.LogRecord) -> logging.LogRecord:
+        """Enrich the provided logging.LogRecord with additional information"""
 
         # This replaces args in message with user supplied args
         # (not recommended but supported)
@@ -132,11 +125,32 @@ class JsonFormatter(logging.Formatter):
         if record.stack_info:
             record.stack_info = self.format_stack(record.stack_info)
 
+        return record
+
+    def _create_log_dict(
+        self,
+        record: logging.LogRecord,
+    ) -> typing.Dict[str, typing.Any]:
+        """Create logged values from the provided logging.LogRecord"""
+
+        log_dict: typing.Dict[str, typing.Any] = {}
+
         for field in self._fields:
-            value: Any = record.__dict__.get(field)
+            value: typing.Any = record.__dict__.get(field)
 
             if value is not None:
                 # key is either field itself (default) or the renamed variant
-                log_dict[self._rename_fields.get(field, field)] = value
+                key: str = self._rename_fields.get(field, field)
+                log_dict[key] = value
 
-        return JsonFormatter.formatter({**log_dict, **self._static_fields})
+        return {**log_dict, **self._static_fields}
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format the provided logging.LogRecord as string, omit None values"""
+
+        record = self._prepare_record(record=record)
+
+        log_dict: typing.Dict[str, typing.Any] = \
+            self._create_log_dict(record=record)
+
+        return JsonLoggingFormatter.formatter(log_dict)

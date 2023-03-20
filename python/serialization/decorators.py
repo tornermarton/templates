@@ -94,11 +94,13 @@ def with_load(
 
 def _clean_dataclass_class_variables(cls: typing.Type[T]) -> None:
     for name in cls.__dict__.get("__dataclass_fields__", {}):
-        if hasattr(cls, name):
-            delattr(cls, name)
+        # starting from root clean all parent classes
+        for cls_ in [*reversed(cls.__bases__), cls]:
+            if hasattr(cls_, name):
+                delattr(cls_, name)
 
-        if hasattr(cls, "__annotations__"):
-            cls.__annotations__.pop(name, None)
+            if hasattr(cls_, "__annotations__"):
+                cls.__annotations__.pop(name, None)
 
 
 def serializable(

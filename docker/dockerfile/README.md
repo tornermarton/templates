@@ -41,12 +41,17 @@ RUN mkdir /var/run/sshd                                                         
 ENV NOTVISIBLE "in users profile"
 ```
 
-Entrypoint:
+Expose:
 ```dockerfile
-ENTRYPOINT ["/usr/sbin/sshd"]
+EXPOSE 22
 ```
 
-sshd.sv.conf (supervisord)
+Entrypoint:
+```dockerfile
+ENTRYPOINT ["/usr/sbin/sshd", "-D"]
+```
+
+sshd.sv.conf (only for supervisord)
 ```
 [program:sshd]
 command=/usr/sbin/sshd -D
@@ -63,9 +68,9 @@ RUN echo 'root:nehezjelszo' | chpasswd
 # !!!IMPORTANT: PASSWORD MUST BE CHANGED IMMIDIATELY AFTER FIRST LOGIN!!!
 ARG USERNAME=ssh-user
 ARG GROUPNAME=ssh-group
-RUN groupadd ${GROUPNAME }                                                \
-    && useradd -s /bin/bash -g ${GROUPNAME} [-G g1,g2,g3] ${USERNAME}     \
-    && echo '${USERNAME}:nehezjelszo' | chpasswd                          \
+RUN groupadd ${GROUPNAME}                                                 \
+    && useradd -s /bin/bash -g ${GROUPNAME} [-G g1,g2,g3] -m ${USERNAME}  \
+    && echo "${USERNAME}:nehezjelszo" | chpasswd                          \
     && mkdir /home/${USERNAME}/.ssh                                       \
     && chown -R ${USERNAME}:${GROUPNAME} /home/${USERNAME}/
 ```

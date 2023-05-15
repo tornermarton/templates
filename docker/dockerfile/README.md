@@ -28,6 +28,17 @@ RUN apt-get update --fix-missing                                                
     && rm -rf /var/lib/apt/lists/*
 ```
 
+## Use environment variables in commands
+
+This allows passing env variables to the command, but keep them hidden in `docker ps -a`
+
+```dockerfile
+ENV BACKEND_URI sqlite:////mlflow/mlflow.db
+ENV ARTIFACT_ROOT /mlflow/artifacts
+
+CMD mlflow server --backend-store-uri ${BACKEND_URI} --default-artifact-root ${ARTIFACT_ROOT} --host 0.0.0.0 --port 5000
+```
+
 ## SSH server
 
 Requirements: `openssh-server`

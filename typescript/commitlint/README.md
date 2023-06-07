@@ -68,7 +68,7 @@ npm install --save-dev husky
 # to husky hook in own git hook
 npx husky install
 # Add simple commit-msg hook (validates commit message)
-npx husky add .husky/commit-msg  'npx --no -- commitlint --edit'
+npx husky add .husky/commit-msg  'npx --no-install commitlint --edit $1'
 ```
 
 All required resources should be sourced in `~/.huskyrc` 

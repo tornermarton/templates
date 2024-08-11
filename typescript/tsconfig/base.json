@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  "compilerOptions": {
+    "strict": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "downlevelIteration": true,
+    "importHelpers": true,
+    "stripInternal": true,
+
+    "checkJs": true,
+
+    "verbatimModuleSyntax": true,
+    // If verbatim module syntax cannot be enabled use:
+    // "isolatedModules": true,
+    // end
+
+    "noErrorTruncation": true,
+
+    "skipLibCheck": true
+  }
+}
